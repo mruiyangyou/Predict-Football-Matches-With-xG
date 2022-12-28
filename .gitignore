@@ -1,2 +1,5 @@
 .DS_Store
 data/
+src/python/__pycache__/
+src/python/baseline-model/
+src/python/Team&Fixture-model/

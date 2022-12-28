@@ -124,52 +124,52 @@ def get_current_rank_data(league, season, start_date, end_date):
 #     return df
 
 
-def Constrcut_df_from_results(li):
+# def Constrcut_df_from_results(li):
 
-    col_name = ['id', 'datetime', 'result', 'team', 'team_xG', 'team_score', 'team_conced','home', 'opponent', 'oppo_xG']
-    id, datetime, result, team, team_xG, goal_score, goal_conced, home, opponent, oppo_xG = [], [], [], [], [], [], [], [], [], []
-    for game in li:
-        id.append(game['id'])
-        opo_side = 'a' if game['side'] == 'h' else 'h'
-        opponent.append(game[opo_side]['title'])
-        team.append(game[game['side']]['title'])
-        home.append(0 if game['side'] == 'h' else 1)
-        result.append(game['result'])
-        team_xG.append(game['xG'][game['side']])
-        datetime.append(game['datetime'])
-        goal_score.append(game['goals'][game['side']])
-        goal_conced.append(game['goals'][opo_side])
-        oppo_xG.append(game['xG'][opo_side])
-    data_list = [id, datetime, result, team, team_xG, goal_score, goal_conced, home, opponent, oppo_xG]
-    df = pd.DataFrame({col_name: col for col_name, col in zip(col_name, data_list)})
-    df['oppo_score'] = df['team_conced']
-    df['oppo_conced'] = df['team_score']
-    df['oppo_home'] = df['home'].apply(lambda x: 1 if x == 0 else 0)
-    return df
+#     col_name = ['id', 'datetime', 'result', 'team', 'team_xG', 'team_score', 'team_conced','home', 'opponent', 'oppo_xG']
+#     id, datetime, result, team, team_xG, goal_score, goal_conced, home, opponent, oppo_xG = [], [], [], [], [], [], [], [], [], []
+#     for game in li:
+#         id.append(game['id'])
+#         opo_side = 'a' if game['side'] == 'h' else 'h'
+#         opponent.append(game[opo_side]['title'])
+#         team.append(game[game['side']]['title'])
+#         home.append(0 if game['side'] == 'h' else 1)
+#         result.append(game['result'])
+#         team_xG.append(game['xG'][game['side']])
+#         datetime.append(game['datetime'])
+#         goal_score.append(game['goals'][game['side']])
+#         goal_conced.append(game['goals'][opo_side])
+#         oppo_xG.append(game['xG'][opo_side])
+#     data_list = [id, datetime, result, team, team_xG, goal_score, goal_conced, home, opponent, oppo_xG]
+#     df = pd.DataFrame({col_name: col for col_name, col in zip(col_name, data_list)})
+#     df['oppo_score'] = df['team_conced']
+#     df['oppo_conced'] = df['team_score']
+#     df['oppo_home'] = df['home'].apply(lambda x: 1 if x == 0 else 0)
+#     return df
 
 
-def num_of_shots(id, home):
-    '''
-    Parmeter:
-    id - Game id
-    home - whether the game is home or away
-    players - player shot data 
+# def num_of_shots(id, home):
+#     '''
+#     Parmeter:
+#     id - Game id
+#     home - whether the game is home or away
+#     players - player shot data 
 
-    Return the number of shots and shots of opponent
+#     Return the number of shots and shots of opponent
 
-    '''
-    status = 'h' if home == 0 else 'a'
-    players = get_playershot_data(id)
-    return len(players[status])
+#     '''
+#     status = 'h' if home == 0 else 'a'
+#     players = get_playershot_data(id)
+#     return len(players[status])
 
-# after merge data 
+# Utils function when calculate the players stats of a match
 def get_stats_dict(league, season, type, n,find_team, team = None):
     data = get_goal_rank(league, season, find_team, team)
     data_dict = {x['player_name']: x[type] for x in data}
     sorted_data = sorted(data_dict.keys(), key= lambda x: int(data_dict[x]), reverse=True)[:n]
     return sorted_data
     
-    
+# Get the stats of players in a particular team for a match
 def get_player_stats(id_data, season):
     
     col_names = ['id', 'datetime', 'home', 'name', 'goal', 'assit', 'shot', 'rank_goal', 'rank_team_goal', 'rank_assist', 'rank_team_assist']

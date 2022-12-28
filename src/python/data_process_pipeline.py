@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import datetime
 import os
+import math
 
 # Define some constant
 start_date_EPL = {
@@ -18,7 +19,7 @@ start_date_EPL = {
 }
 
 
-# Simple data constrution
+# Simple data constrution from Lists
 def Constrcut_df_from_results(li):
 
     col_name = ['id', 'datetime', 'result', 'team', 'team_xG', 'team_score', 'team_conced','home', 'opponent', 'oppo_xG']
@@ -42,7 +43,7 @@ def Constrcut_df_from_results(li):
     df['oppo_home'] = df['home'].apply(lambda x: 1 if x == 0 else 0)
     return df
 
-# data utils function
+# Calculate number of shots
 def num_of_shots(id, home):
     '''
     Parmeter:
@@ -57,7 +58,7 @@ def num_of_shots(id, home):
     players = get_playershot_data(id)
     return len(players[status])
 
-
+# Get the rank at a paritulcar time(end date)
 def get_current_rank(end_date, team, opponent, start_date, year):
     table = get_current_rank_data('EPL', year, start_date= start_date, end_date=end_date)
     data = pd.DataFrame(table[1:], columns=table[0])
@@ -65,11 +66,12 @@ def get_current_rank(end_date, team, opponent, start_date, year):
     opponent_rank = data.loc[data['Team'] == opponent].index.to_list()[0] + 1
     return rank, opponent_rank
 
+# Minus one day utils function
 def minus_one_day(dt, return_str = True):
     date = datetime.datetime.strptime(dt, '%Y-%m-%d') - datetime.timedelta(days = 1)
     return datetime.datetime.strftime(date,"%Y-%m-%d") if return_str else date
 
-
+# Calculate the win ratio against a particular team
 def get_win_ratio(date, team, opponent, fixture_data, rate_against_new):
     
     fixture_data = fixture_data.loc[fixture_data['Date'] < minus_one_day(str(date).split(' ')[0], return_str=False)]
@@ -86,7 +88,7 @@ def get_win_ratio(date, team, opponent, fixture_data, rate_against_new):
         return rate_against_new[0], rate_against_new[1]
   
 
-
+# Get team recent performance
 def get_team_recent(interval, prefix, df):
 
     df[f'{prefix}_recent_goals'] = df[f'{prefix}_score'].rolling(5, closed='left').mean()
@@ -95,8 +97,7 @@ def get_team_recent(interval, prefix, df):
     df[f'{prefix}_recent_xG'] = df[f'{prefix}_xG'].rolling(5, closed='left').mean()
     return df
 
-# Data pipeline problem
-
+# Data pipeline for a particulat team
 def team_data_pipeline(team, start_year, end_year, fixture_data, rank_table, new_team_record):
 
     df = pd.DataFrame(columns=['a'] * 30)
@@ -141,7 +142,7 @@ def team_data_pipeline(team, start_year, end_year, fixture_data, rank_table, new
 
     return df
 
-
+# Get fixture data
 def get_all_fixture(path, special_date_list):
 
     fixtures = pd.DataFrame(columns=['Date', 'HomeTeam', 'AwayTeam', 'Result'])
@@ -164,6 +165,7 @@ def get_all_fixture(path, special_date_list):
 
     return fixtures
 
+# Get rank table from 2013 till now
 def get_all_rank():
     table_2013 = pd.read_excel('/Users/marceloyou/Desktop/Xg-Prediction/data/table/table2013.xlsx', header=None)
     table_2013.columns = ['Rank', 'Team', 'Gs', 'Weel', 'Pts']
@@ -180,6 +182,7 @@ def get_all_rank():
         table = pd.concat([table, year_table], axis = 0)
     return table
 
+# Get the stats against promote team 
 def stats_against_promoted_team(fixture):
     unique_team = fixture['HomeTeam'].unique().tolist()
     record = {}
@@ -208,7 +211,7 @@ def stats_against_promoted_team(fixture):
     win_newteam = win_newteam.transpose()
     return win_newteam
 
-
+# Construct whole data set 
 def final_data_pipeline(fixture, table, newteam_df, start_year, end_year):
     data_path = '/Users/marceloyou/Desktop/Xg-Prediction/data/matchdata'
     final_df = pd.DataFrame(columns=['a'] * 30)
@@ -230,11 +233,161 @@ def final_data_pipeline(fixture, table, newteam_df, start_year, end_year):
         final_df = pd.concat([final_df, year_df])
     return final_df
 
-def select_team_data(data, team):
-    return data.loc[(data['opponent'] == team) | (data['team'] == team),:]
-# CHange dataframe to Bradely Terry model format
+# Select team data
+def select_team_data(data, team, season):
+    return data.loc[(data['Season'] == f'{season}-{season+1}') &((data['opponent'] == team) | (data['team'] == team))]
 
-'''
-def Bt_model_trasformation(final_df):
-    fafa
-'''
+#  Cumsum of opponent data
+def cumsm_stat(df, team):
+    df['team_score'] = df.apply(lambda x: x['team_score'] if x['team'] == team else x['oppo_score'], axis = 1)
+    df['team_conced']  = df.apply(lambda x: x['team_conced'] if x['team'] == team else x['oppo_conced'], axis = 1)
+    df['team_xG'] = df.apply(lambda x: x['team_xG'] if x['team'] == team else x['oppo_xG'], axis = 1)
+    df['y'] = df.apply(lambda x: x['y'] if x['team'] == team else 1 if (x['team'] != team) and (x['y'] == 0) else 0, axis = 1)
+    df['team'] = team
+    df = df[['Season', 'id', 'datetime', 'team', 'team_score', 'team_conced', 'team_xG', 'y']]
+    df = get_team_recent(5, 'team', df)
+    return df
+
+# change the opponent statistics 
+def change_oppo_stats(row, na_data, promote_team_stats, final_df_sorted):
+    if math.isnan(row['team_recent_goals']):
+        # deal with na
+        season = int(row['Season'].split('-')[0]) - 1
+        team_recent_goals = (na_data.loc[(na_data.index == f'{season}-{season+1}') & (na_data['Team'] == row['team']), 'G'] / 38).values[0] if row['team'] not in promote_team_stats.loc[promote_team_stats.index == row['Season'], 'Team'].to_list() else 0.91
+        team_recent_conced = (na_data.loc[(na_data.index == f'{season}-{season+1}') & (na_data['Team'] == row['team']), 'GA'] / 38).values[0] if row['team'] not in promote_team_stats.loc[promote_team_stats.index == row['Season'], 'Team'].to_list() else 1.53
+        team_recent_xG = (na_data.loc[(na_data.index == f'{season}-{season+1}') & (na_data['Team'] == row['team']), 'xG'] / 38).values[0] if row['team'] not in promote_team_stats.loc[promote_team_stats.index == row['Season'], 'Team'].to_list() else 0.998
+        oppo_recent_goals = (na_data.loc[(na_data.index == f'{season}-{season+1}') & (na_data['Team'] == row['opponent']), 'G'] / 38).values[0]  if row['opponent'] not in promote_team_stats.loc[promote_team_stats.index == row['Season'], 'Team'].to_list() else 0.91
+        oppo_recent_conced = (na_data.loc[(na_data.index == f'{season}-{season+1}') & (na_data['Team'] == row['opponent']), 'GA'] / 38).values[0] if row['opponent'] not in promote_team_stats.loc[promote_team_stats.index == row['Season'], 'Team'].to_list() else 1.53
+        oppo_recent_xG = (na_data.loc[(na_data.index == f'{season}-{season+1}') & (na_data['Team'] == row['opponent']), 'xG'] /38).values[0] if row['opponent'] not in promote_team_stats.loc[promote_team_stats.index == row['Season'], 'Team'].to_list() else 0.998
+        if math.isnan(row['team_recent_state']):
+            team_recent_state = (na_data.loc[(na_data.index == f'{season}-{season+1}') & (na_data['Team'] == row['team']), 'W'] / 38).values[0]  if row['team'] not in promote_team_stats.loc[promote_team_stats.index == row['Season'], 'Team'].to_list() else 0.232
+            oppo_recent_state = (na_data.loc[(na_data.index == f'{season}-{season+1}') & (na_data['Team'] == row['opponent']), 'W'] / 38).values[0] if row['opponent'] not in promote_team_stats.loc[promote_team_stats.index == row['Season'], 'Team'].to_list() else 0.232
+        else:
+            season = int(row['Season'].split('-')[0]) 
+            oppo_data = select_team_data(final_df_sorted, row['opponent'], season)
+            oppo_recent_df = cumsm_stat(oppo_data, row['opponent'])
+            team_recent_state, oppo_recent_state = row['team_recent_state'],  oppo_recent_df.loc[oppo_recent_df['id'] == row['id'], 'team_recent_state'].values[0]
+    else:
+        team_recent_goals, team_recent_conced, team_recent_xG, team_recent_state = row['team_recent_goals'], row['team_recent_conced'], row['team_recent_xG'], row['team_recent_state']
+        season = int(row['Season'].split('-')[0]) 
+        oppo_data = select_team_data(final_df_sorted, row['opponent'], season)
+        oppo_recent_df = cumsm_stat(oppo_data, row['opponent'])
+        oppo_recent_goals,oppo_recent_conced, oppo_recent_state, oppo_recent_xG = oppo_recent_df.loc[oppo_recent_df['id'] == row['id'], ['team_recent_goals', 'team_recent_conced','team_recent_state', 'team_recent_xG']].values.reshape(4,).tolist()
+    return team_recent_goals, team_recent_conced, team_recent_state, team_recent_xG, oppo_recent_goals, oppo_recent_conced, oppo_recent_state, oppo_recent_xG
+
+# Change format for Bradley Terry Model
+def format_for_bt_model(data):
+    data = data[['datetime', 'y', 'team', 'team_xG', 'home', 
+       'team_rank', 'team_win_rate', 'opponent', 'oppo_xG', 'oppo_home', 
+       'oppo_rank', 'oppo_win_rate']]
+    for row in data.index.tolist():
+        if data.loc[row, 'home'] == 0:
+            pass
+        else:
+    
+            data.loc[row, 'y'] = 0 if data.loc[row,'y'] == 1 else 0
+            data.loc[row, 'team'], data.loc[row, 'opponent'] = data.loc[row, 'opponent'], data.loc[row, 'team']
+            data.loc[row, 'home'], data.loc[row, 'oppo_home'] = data.loc[row, 'oppo_home'], data.loc[row, 'home']
+            data.loc[row, 'team_rank'], data.loc[row, 'oppo_rank'] = data.loc[row, 'oppo_rank'], data.loc[row, 'team_rank']
+            data.loc[row, 'team_xG'], data.loc[row, 'oppo_xG'] = data.loc[row, 'oppo_xG'], data.loc[row, 'team_xG']
+            data.loc[row, 'team_win_rate'], data.loc[row, 'oppo_win_rate'] = data.loc[row, 'oppo_win_rate'], data.loc[row, 'team_win_rate']
+    return data
+
+# format data into homeaway version
+def formatdata_homeaway(data):
+    for row in data.index.tolist():
+        if data.loc[row, 'home'] == 0:
+            pass
+        else:
+            # need to swap the value
+            data.loc[row, 'result'] =  'w' if data.loc[row, 'result'] == 'l' else 'l' if data.loc[row, 'result'] == 'w' else 'd'
+            data.loc[row, 'team'], data.loc[row, 'opponent'] = data.loc[row, 'opponent'], data.loc[row, 'team']
+            data.loc[row, 'team_rank'], data.loc[row, 'oppo_rank'] = data.loc[row, 'oppo_rank'], data.loc[row, 'team_rank']
+            data.loc[row, 'team_xG'], data.loc[row, 'oppo_xG'] = data.loc[row, 'oppo_xG'], data.loc[row, 'team_xG']
+            data.loc[row, 'team_win_rate'], data.loc[row, 'oppo_win_rate'] = data.loc[row, 'oppo_win_rate'], data.loc[row, 'team_win_rate']
+            data.loc[row, 'team_score'], data.loc[row, 'oppo_score'] = data.loc[row, 'oppo_score'], data.loc[row, 'team_score']
+            data.loc[row, 'team_conced'], data.loc[row, 'oppo_conced'] = data.loc[row, 'oppo_conced'], data.loc[row, 'team_conced']
+            data.loc[row, 'team_shot_attempt'], data.loc[row, 'oppo_shot_attempt'] = data.loc[row, 'oppo_shot_attempt'], data.loc[row, 'team_shot_attempt']
+            data.loc[row, 'team_recent_goals'], data.loc[row, 'oppo_recent_goals'] = data.loc[row, 'oppo_recent_goals'], data.loc[row, 'team_recent_goals']
+            data.loc[row, 'team_recent_conced'], data.loc[row, 'oppo_recent_conced'] = data.loc[row, 'oppo_recent_conced'], data.loc[row, 'team_recent_conced']
+            data.loc[row, 'team_recent_state'], data.loc[row, 'oppo_recent_state'] = data.loc[row, 'oppo_recent_state'], data.loc[row, 'team_recent_state']
+            data.loc[row, 'team_recent_xG'], data.loc[row, 'oppo_recent_xG'] = data.loc[row, 'oppo_recent_xG'], data.loc[row, 'team_recent_xG']
+    data['home'], data['oppo_home'] = 0, 1
+    data['team_stage'], data['oppo_stage'] = data['stage'], data['stage']
+    data.drop(columns = ['y', 'team_draw_rate', 'stage'], inplace = True)
+    return data  
+
+# Accumulate points feature utils 
+def get_accumalate_points(team, oppo, date, fixture, dict):
+   fixture_data = fixture.loc[fixture['Date'] < minus_one_day(str(date).split(' ')[0], return_str=False)]
+   match_patten = [' VS '.join([team, oppo]), ' VS '.join([oppo, team])]
+   select_df = fixture_data.loc[fixture['MatchName'].isin(match_patten)]
+
+   if select_df.shape[0] != 0:
+      result = {team: 0, oppo: 0}
+      for idx, x in select_df.iterrows():
+         win_team = x.HomeTeam if x.Result == 'H' else x.AwayTeam if x.Result == 'A' else 'Draw' 
+         if win_team == 'Draw':
+            result[team] += 1
+            
+            result[oppo] += 1
+         elif win_team == team:
+            result[team] += 3
+         else:
+            result[oppo] += 3
+      return result[team], result[team] / select_df.shape[0], result[oppo], result[oppo]/select_df.shape[0]
+
+   else:
+        return dict[team][0], dict[team][1], dict[oppo][0], dict[oppo][1]
+
+def calcualte_recent_points(df, team, bonus, bonus_list):
+    def points(x, team, bonus, bonus_list):
+        if team == x['team']:
+            if x['result'] == 'l':
+                points = 0 
+            elif x['result'] == 'd':
+                points = 1 + bonus if x['opponent'] in bonus_list else 1
+            else:
+                points = 3 + bonus if x['opponent'] in bonus_list else 3
+        else:
+            if x['result'] == 'l':
+                points = 3 + bonus if x['team'] in bonus_list else 3 
+            elif x['result'] == 'd':
+                points = 1 + bonus if x['team'] in bonus_list else 1
+            else:
+                points = 0
+        return points
+    df['points'] = df.apply(lambda x: points(x, team,bonus,bonus_list), axis = 1)
+    df = df[['Season','id', 'datetime', 'points']]
+    df['recent_game_points'] = df['points'].rolling(3, closed = 'left').sum()
+    return df
+    
+def add_recent_points(row,  bonus, bonus_list, final_df_sorted):
+    season = int(row['Season'].split('-')[0])
+    team_data, oppo_data = select_team_data(final_df_sorted, row['team'], season), select_team_data(final_df_sorted, row['opponent'],season)
+    na_list = team_data.iloc[0:3].id.to_list()
+    team_recent_df = calcualte_recent_points(team_data, row['team'], bonus, bonus_list)
+    oppo_recent_df = calcualte_recent_points(oppo_data, row['opponent'], bonus, bonus_list)
+    if row['id'] in na_list:
+        # need last season to support
+        last_season = season - 1
+        team_data, oppo_data = select_team_data(final_df_sorted, row['team'], last_season), select_team_data(final_df_sorted, row['opponent'], last_season)
+        # no last team data construct a new data frame with stats
+        # if team_data.shape[0] == 0:
+        #     team_last_recent_df, oppo_last_recent_df = pd.DataFrame({'team':[row['team']]*3, 'points': [0.964] * 3})
+        # elif oppo_data.shape[0] == 0:
+        #     oppo_last_recent_df = pd.DataFrame({'team':[row['team']]*3, 'points': [0.964] * 3})
+        # else:
+        #     team_last_recent_df = calcualte_recent_points(team_data, row['team'], bonus, bonus_list)
+        #     oppo_last_recent_df = calcualte_recent_points(oppo_data, row['opponent'], bonus, bonus_list)
+        team_last_recent_df =  calcualte_recent_points(team_data, row['team'], bonus, bonus_list) if team_data.shape[0] != 0 else pd.DataFrame({'team':[row['team']]*3, 'points': [0.964] * 3})
+        oppo_last_recent_df =  calcualte_recent_points(oppo_data, row['opponent'], bonus, bonus_list) if oppo_data.shape[0] != 0 else pd.DataFrame({'team':[row['team']]*3, 'points': [0.964] * 3})
+        if row['id'] == na_list[0]:
+            team_recent_points, oppo_recent_points = team_last_recent_df.iloc[-3:].points.sum(), oppo_last_recent_df.iloc[-3:].points.sum()
+        elif row['id'] == na_list[1]:
+             team_recent_points, oppo_recent_points = team_last_recent_df.iloc[-2:].points.sum() + team_recent_df.iloc[0].points, oppo_last_recent_df.iloc[-2:].points.sum() + oppo_recent_df.iloc[0].points
+        else:
+             team_recent_points, oppo_recent_points = team_last_recent_df.iloc[-1].points + team_recent_df.iloc[:2].points.sum(), oppo_last_recent_df.iloc[-1].points + oppo_recent_df.iloc[:2].points.sum()   
+    else:
+        team_recent_points,oppo_recent_points = team_recent_df.loc[team_recent_df['id'] == row['id'], 'points'].values[0], oppo_recent_df.loc[oppo_recent_df['id'] == row['id'], 'points'].values[0]
+    return team_recent_points, oppo_recent_points
